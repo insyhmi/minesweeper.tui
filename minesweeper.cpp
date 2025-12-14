@@ -24,8 +24,11 @@ class Board{
 private:
     int row;
     int column;
+    int num_unopened_cells;
     int *num_board;
     bool *revealed_board;
+    bool *flagged_board;
+    bool lost;
     std::unordered_set<std::pair<int, int>, PairHash> mine_positions; // The positions are stored in (width, height) format
     Position cursor_position;
     const std::pair<int, int> cell_directions[8] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
@@ -47,13 +50,53 @@ private:
     bool is_mine(int c, int r){
         return num_board[this->column*r + c] == -1;
     }
+
+    void clear_position(){ // To delete the standout effect on the cell 
+        int x, y, r, c;
+        r = cursor_position.y;
+        c = cursor_position.x;
+        x = c * 4 + 2;
+        y = r * 2 + 1;
+        if (revealed_board[this->column*r + c]) {
+            wattron(this->board, COLOR_PAIR(num_board[this->column*r + c]));
+            mvwprintw(this->board, y, x, "%d", num_board[this->column*r + c]);
+            wattroff(this->board, COLOR_PAIR(num_board[this->column*r + c]));
+        }
+        else if (flagged_board[this->column*r + c]){
+            wattron(this->board, COLOR_PAIR(9));
+            mvwprintw(this->board, y, x, "F");
+            wattroff(this->board, COLOR_PAIR(9));
+        }
+        else mvwaddch(this->board, y, x, ' ');
+        wrefresh(this->board);
+    }
+
+    void print_position(){
+        int x, y, r, c;
+        r = cursor_position.y;
+        c = cursor_position.x;
+        x = c * 4 + 2;
+        y = r * 2 + 1;
+        wattron(this->board, A_STANDOUT);
+        if (revealed_board[this->column*r + c]) {
+            if (num_board[this->column*r + c] == -1) mvwprintw(this->board, y, x, "*");
+            else mvwprintw(this->board, y, x, "%d", num_board[this->column*r + c]);
+        }
+        else if (flagged_board[this->column*r + c]) mvwprintw(this->board, y, x, "F");
+        else mvwaddch(this->board, y, x, ' ');
+        wattroff(this->board, A_STANDOUT);
+        wrefresh(this->board);
+    };
+
 public:
     WINDOW * board;
     int board_height;
     int board_width;
-
     int num_mines;
+    bool allow_movement;
     Board(int r, int c, int m): row(r), column(c), num_mines(m){
+        num_unopened_cells = r*c;
+        allow_movement = true;
         int Y_SIZE, X_SIZE;
         getmaxyx(stdscr, Y_SIZE, X_SIZE);
         this->board_height = 2*row+1;
@@ -65,8 +108,10 @@ public:
 
         num_board = new int[row*column];
         revealed_board = new bool [row*column];
+        flagged_board = new bool [row*column];
         for (int i = 0; i < row*column; i++){
             revealed_board[i] = false;
+            flagged_board[i] = false;
             num_board[i] = 0;
         }
         srand(time(NULL));
@@ -91,7 +136,6 @@ public:
             }
 
         }
-
         for (int i = 1; i < row; ++i) mvwhline(board, 2*i, 1, ACS_HLINE, board_width-2);
         for (int j = 1; j < column; ++j) mvwvline(board, 1, 4*j, ACS_VLINE, board_height-2);
         for (int i = 1; i < row; ++i){
@@ -101,37 +145,23 @@ public:
         print_position();
     }    
 
-    void clear_position(){ // To delete the standout effect on the cell 
-        int x, y, r, c;
-        r = cursor_position.y;
-        c = cursor_position.x;
-        x = c * 4 + 2;
-        y = r * 2 + 1;
-        if (revealed_board[this->column*r + c]) {
-            wattron(this->board, COLOR_PAIR(num_board[this->column*r + c]));
-            mvwprintw(this->board, y, x, "%d", num_board[this->column*r + c]);
-            wattroff(this->board, COLOR_PAIR(num_board[this->column*r + c]));
-        }
-        else mvwaddch(this->board, y, x, ' ');
-        wrefresh(this->board);
+    bool has_win(){
+        return num_unopened_cells == num_mines;
     }
 
-    void print_position(){
-        int x, y, r, c;
-        r = cursor_position.y;
-        c = cursor_position.x;
-        x = c * 4 + 2;
-        y = r * 2 + 1;
-        wattron(this->board, A_STANDOUT);
-        if (revealed_board[this->column*r + c]) mvwprintw(this->board, y, x, "%d", num_board[this->column*r + c]);
-        else mvwaddch(this->board, y, x, ' ');
-        wattroff(this->board, A_STANDOUT);
-        wrefresh(this->board);
-    };
+    bool has_lost(){
+        return lost;
+    }
 
     void click(int x, int y){
         if (revealed_board[column*y+x]) return;
         revealed_board[column*y+x] = true;
+        if (flagged_board[column*y+x]) flagged_board[column*y+x] = false;
+        --num_unopened_cells;
+        if (is_mine(x, y)){
+            allow_movement = false;
+            lost = true;
+        }
         if (num_board[column*y+x] == 0){
             for (std::pair<int, int> d: cell_directions){
                 int nx = x + d.first;
@@ -144,7 +174,13 @@ public:
         }
     }
 
+    void flag(int c, int r){
+        if (revealed_board[column*r+c]) return;
+        flagged_board[column*r+c] = !flagged_board[column*r+c];
+    }
+    
     void handle_trigger(int ch){
+        if (!allow_movement) return;
         clear_position();
         switch(ch){
             case KEY_UP:
@@ -162,9 +198,13 @@ public:
             case KEY_ENTER: case 10 : case 13: 
                 click(this->cursor_position.x, this->cursor_position.y);
                 break;
+            case ' ':
+                flag(this->cursor_position.x, this->cursor_position.y);
+                break;
         }
         mvprintw(0, 0, "Position: (%d, %d)   ", this->cursor_position.x, this->cursor_position.y);
         print_position();
+        if (has_win()) allow_movement = false;
     }
 };
 
@@ -190,6 +230,7 @@ int main(int argc, char ** argv){
     init_pair(6, COLOR_CYAN, COLOR_BLACK);
     init_pair(7, COLOR_WHITE, COLOR_MAGENTA);
     init_pair(8, COLOR_BLACK, COLOR_WHITE);
+    init_pair(9, COLOR_RED, COLOR_WHITE); // Flag color
 
     int Y_SIZE, X_SIZE;
     int BOARD_HEIGHT, BOARD_WIDTH;
@@ -202,6 +243,20 @@ int main(int argc, char ** argv){
     int ch;
     while(ch = getch(), ch != 'x'){
         board.handle_trigger(ch);
+        if (!board.allow_movement){
+            if (board.has_win()) {
+                wattron(stdscr, A_STANDOUT);
+                mvprintw(Y_SIZE-1, 0, "You win! ");
+                wattroff(stdscr, A_STANDOUT);
+            }
+            else if (board.has_lost()){
+                wattron(stdscr, A_STANDOUT);
+                mvprintw(Y_SIZE-1, 0, "You lost! ");
+                wattroff(stdscr, A_STANDOUT);
+            }
+            getch();
+            break;
+        }
     }
     wattron(stdscr, A_STANDOUT);
     mvprintw(Y_SIZE-1, 0, "Press any key to exit...");
