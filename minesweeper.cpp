@@ -24,6 +24,7 @@ class Board{
 private:
     int row;
     int column;
+    int flags;
     int num_unopened_cells;
     int *num_board;
     bool *revealed_board;
@@ -88,6 +89,21 @@ private:
         wrefresh(this->board);
     };
 
+    void show_all_mines(){
+        for (int r = 0; r < row; r++){
+            for (int c = 0; c < column; c++){
+                if (num_board[r*column + c] == -1){
+                    int x, y;
+                    x = 4 * c + 2;
+                    y = 2 * r + 1;
+                    wattron(this->board, COLOR_PAIR(10));
+                    mvwprintw(this->board, y, x, "*");
+                    wattroff(this->board, COLOR_PAIR(10));
+                }
+            }
+        }
+    }
+
 public:
     WINDOW * board;
     int board_height;
@@ -97,6 +113,7 @@ public:
     Board(int r, int c, int m): row(r), column(c), num_mines(m){
         num_unopened_cells = r*c;
         allow_movement = true;
+        flags = 0;
         int Y_SIZE, X_SIZE;
         getmaxyx(stdscr, Y_SIZE, X_SIZE);
         this->board_height = 2*row+1;
@@ -132,9 +149,7 @@ public:
                         }
                     }
                 }
-                mvprintw(mine_positions.size(), 0, "Mine position: (%d, %d)", mine_x, mine_y);
             }
-
         }
         for (int i = 1; i < row; ++i) mvwhline(board, 2*i, 1, ACS_HLINE, board_width-2);
         for (int j = 1; j < column; ++j) mvwvline(board, 1, 4*j, ACS_VLINE, board_height-2);
@@ -143,6 +158,8 @@ public:
         }
         wrefresh(board);
         print_position();
+        mvprintw(0, 0, "Flags: 0/%d", num_mines);
+        mvprintw(0, X_SIZE-5, "%dx%d", row, column);
     }    
 
     bool has_win(){
@@ -159,6 +176,7 @@ public:
         if (flagged_board[column*y+x]) flagged_board[column*y+x] = false;
         --num_unopened_cells;
         if (is_mine(x, y)){
+            show_all_mines();
             allow_movement = false;
             lost = true;
         }
@@ -177,6 +195,8 @@ public:
     void flag(int c, int r){
         if (revealed_board[column*r+c]) return;
         flagged_board[column*r+c] = !flagged_board[column*r+c];
+        flags += (flagged_board[column*r+c]) ? 1 : -1;
+        mvprintw(0, 0, "Flags: %d/%d", flags, num_mines);
     }
     
     void handle_trigger(int ch){
@@ -202,7 +222,6 @@ public:
                 flag(this->cursor_position.x, this->cursor_position.y);
                 break;
         }
-        mvprintw(0, 0, "Position: (%d, %d)   ", this->cursor_position.x, this->cursor_position.y);
         print_position();
         if (has_win()) allow_movement = false;
     }
@@ -231,6 +250,7 @@ int main(int argc, char ** argv){
     init_pair(7, COLOR_WHITE, COLOR_MAGENTA);
     init_pair(8, COLOR_BLACK, COLOR_WHITE);
     init_pair(9, COLOR_RED, COLOR_WHITE); // Flag color
+    init_pair(10, COLOR_WHITE, COLOR_RED); // All mines revealed color
 
     int Y_SIZE, X_SIZE;
     int BOARD_HEIGHT, BOARD_WIDTH;
