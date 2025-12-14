@@ -253,12 +253,19 @@ int main(int argc, char ** argv){
     init_pair(10, COLOR_WHITE, COLOR_RED); // All mines revealed color
 
     int Y_SIZE, X_SIZE;
-    int BOARD_HEIGHT, BOARD_WIDTH;
+    int BOARD_HEIGHT, BOARD_WIDTH, MINE_COUNT;
     BOARD_HEIGHT = 10;
     BOARD_WIDTH = 10;
+    MINE_COUNT = 15;
     getmaxyx(stdscr, Y_SIZE, X_SIZE);
 
-    Board board(BOARD_HEIGHT, BOARD_WIDTH, 15);
+    if (argc == 4){
+        BOARD_HEIGHT = atoi(argv[1]);
+        BOARD_WIDTH = atoi(argv[2]);
+        MINE_COUNT = atoi(argv[3]);
+    }
+    
+    Board board(BOARD_HEIGHT, BOARD_WIDTH, MINE_COUNT);
 
     int ch;
     while(ch = getch(), ch != 'x'){
